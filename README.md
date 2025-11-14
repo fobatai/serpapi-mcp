@@ -44,6 +44,16 @@ uv sync
    uv run src/server.py
    ```
 
+## Running with Docker
+
+```bash
+# Build the image
+docker build -t serpapi-mcp-server .
+
+# Run the container
+docker run -e SERPAPI_API_KEY=<your_api_key> -p 8000:8000 serpapi-mcp-server
+```
+
 ## Client Configurations
 
 ### Claude Desktop
@@ -248,12 +258,23 @@ Common error responses:
 # Install dependencies
 uv sync
 
-# Run with MCP Inspector
-uv run mcp dev src/server.py
-
 # Run server directly
 uv run src/server.py
 ```
+
+### Using MCP Inspector
+
+The MCP Inspector provides a web interface for testing MCP tools.
+
+```bash
+# Install (requires Node.js)
+npm install -g @modelcontextprotocol/inspector
+
+# Run inspector
+npx @modelcontextprotocol/inspector
+```
+
+Then configure: URL `localhost:8000/mcp`, Transport "Streamable HTTP transport", and click "List tools".
 
 ### Project Structure
 
