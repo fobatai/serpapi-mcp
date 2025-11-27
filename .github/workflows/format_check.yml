@@ -18,4 +18,4 @@ jobs:
           version: "latest"
 
       - name: Run uv format check
-        run: uv format --check .
+        run: uv format --check
