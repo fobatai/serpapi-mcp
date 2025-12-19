@@ -1,5 +1,0 @@
-[start]
-command = "python src/server.py"
-
-[variables]
-PYTHONPATH = "src"
