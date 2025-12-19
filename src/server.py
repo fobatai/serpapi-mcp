@@ -126,18 +126,18 @@ async def healthcheck_handler(request):
     })
 
 async def root_handler(request):
-    html_content = """
-    <html>
-        <head><title>Serper.dev MCP Server</title></head>
-        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
-            <h1>Serper.dev MCP Server (Relay)</h1>
-            <p>Status: <span style="color: green;">Online</span></p>
-            <p>Gebruik deze URL in je MCP client:</p>
-            <code>https://serper-mcp.pontifexxpaddock.com/mcp?api_key={JOUW_SERPER_KEY}</code>
-        </body>
-    </html>
-    """
-    return HTMLResponse(content=html_content)
+    routes_info = []
+    for route in request.app.routes:
+        info = {"path": getattr(route, "path", str(route))}
+        if hasattr(route, "methods"):
+            info["methods"] = list(route.methods)
+        routes_info.append(info)
+            
+    return JSONResponse({
+        "status": "online", 
+        "service": "Serper.dev MCP Server",
+        "debug_routes": routes_info
+    })
 
 def main():
     middleware = [

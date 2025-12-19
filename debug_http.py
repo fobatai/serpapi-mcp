@@ -13,8 +13,14 @@ async def debug_connection():
     
     async with httpx.AsyncClient(verify=False) as client: # Verify=False om SSL errors even uit te sluiten
         try:
-            # 1. Probeer een simpele GET request (verwacht SSE stream headers of redirect)
-            print("\n--- Stap 1: GET Request ---")
+            # 1. Probeer een simpele GET request naar de ROOT om routes te zien
+            print("\n--- Stap 0: Check Routes op / ---")
+            root_resp = await client.get(BASE_URL + "/")
+            print(f"Root Status: {root_resp.status_code}")
+            print(f"Root Body: {root_resp.text}")
+
+            # 2. Probeer een simpele GET request naar MCP endpoint
+            print("\n--- Stap 1: GET Request naar MCP ---")
             response = await client.get(FULL_URL, follow_redirects=False)
             
             print(f"Status Code: {response.status_code}")
