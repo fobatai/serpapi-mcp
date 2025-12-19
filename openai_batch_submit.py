@@ -19,7 +19,7 @@ BESTANDSNAAM = "excel.xlsx"
 JSONL_BESTAND = "batch_input_mcp_research.jsonl"
 
 # Remote MCP Configuratie
-MCP_SERVER_URL = f"http://serper-mcp.pontifexxpaddock.com/{SERPAPI_API_KEY}/mcp"
+MCP_SERVER_URL = f"http://serperremotemcp-waxdvq-4d01cc-18-156-170-236.traefik.me/{SERPAPI_API_KEY}/mcp"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -35,10 +35,10 @@ def main():
         print(f"Bestand '{BESTANDSNAAM}' niet gevonden!")
         return
 
-    # Voor de test pakken we even 5 items om te zien of de MCP relay goed werkt
-    if len(df) > 5:
-        df_to_process = df.sample(n=5, random_state=42) 
-        print(f"Testmodus: 5 items geselecteerd uit {len(df)} regels.")
+    # Voor de test pakken we even 20 items om te zien of de MCP relay goed werkt
+    if len(df) > 20:
+        df_to_process = df.sample(n=20, random_state=42) 
+        print(f"Testmodus: 20 items geselecteerd uit {len(df)} regels.")
     else:
         df_to_process = df
     
@@ -66,6 +66,9 @@ def main():
             3. Market Price (EUR)
             4. Lifecycle Status (Active/EOL)
             5. Successor if EOL
+            
+            CRITICAL INSTRUCTION:
+            Use the 'visit_page' tool to inspect search results and verify details on official websites. Do not rely solely on search snippets.
 
             OUTPUT FORMAT:
             Provide your report and then the results in JSON format within <json> tags.

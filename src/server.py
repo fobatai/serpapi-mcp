@@ -95,6 +95,31 @@ async def search(q: str, type: str = "search", gl: str = "nl", hl: str = "nl", l
         except Exception as e:
             return f"Error connecting to Serper.dev: {str(e)}"
 
+@mcp.tool()
+async def visit_page(url: str) -> str:
+    """Visit a webpage and extract its content as clean Markdown text.
+    
+    Use this tool to read the full content of a search result to find specific details 
+    like technical specifications, EOL status, or replacement parts.
+    
+    Args:
+        url: The full URL of the webpage to visit.
+    """
+    jina_url = f"https://r.jina.ai/{url}"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            # Increased timeout for page scraping
+            response = await client.get(jina_url, headers=headers, timeout=60.0)
+            response.raise_for_status()
+            return response.text
+        except Exception as e:
+            return f"Error visiting page: {str(e)}"
+
 async def healthcheck_handler(request):
     return JSONResponse({
         "status": "healthy",
