@@ -29,7 +29,7 @@ Vervang `JOUW_SERPER_KEY` door je sleutel van [serper.dev](https://serper.dev).
       "args": [
         "-y",
         "@modelcontextprotocol/server-sse",
-        "https://serper-mcp.pontifexxpaddock.com/JOUW_SERPER_KEY/mcp"
+        "https://serper-mcp.pontifexxpaddock.com/mcp?api_key=JOUW_SERPER_KEY"
       ]
     }
   }
@@ -43,7 +43,7 @@ Je kunt deze MCP server ook gebruiken als 'tool' in je eigen OpenAI scripts (bij
 **Voorbeeld Tool Definitie:**
 
 ```python
-MCP_SERVER_URL = "https://serper-mcp.pontifexxpaddock.com/JOUW_SERPER_KEY/mcp"
+MCP_SERVER_URL = "https://serper-mcp.pontifexxpaddock.com/mcp?api_key=JOUW_SERPER_KEY"
 
 tools = [
     {
@@ -75,7 +75,7 @@ web: python src/server.py
 
 *   `GET /` - Informatiepagina met instructies.
 *   `GET /healthcheck` - Controleert de status van de server.
-*   `GET /:api_key/mcp` - SSE Endpoint voor MCP clients.
+*   `GET /mcp?api_key=...` - SSE Endpoint voor MCP clients.
 
 ## 📄 Licentie
 MIT

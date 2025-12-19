@@ -27,28 +27,23 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         api_key = None
+        
+        # 1. Authorization Header (Bearer)
         auth = request.headers.get("Authorization")
         if auth and auth.startswith("Bearer "):
             api_key = auth.split(" ", 1)[1].strip()
 
-        original_path = request.scope.get("path", "")
-        path_parts = original_path.strip("/").split("/") if original_path else []
+        # 2. Query Parameter (fallback)
+        if not api_key:
+            api_key = request.query_params.get("api_key")
 
-        if not api_key and len(path_parts) >= 2 and path_parts[1] == "mcp":
-            api_key = path_parts[0]
-            # No path rewriting here anymore. We handle this via explicit route proxying.
-
+        # 3. Environment Variable (fallback)
         if not api_key:
             api_key = os.getenv("SERPER_API_KEY")
 
         if not api_key:
-            # If we are in the proxy route, the key might not be extracted yet by middleware logic
-            # but will be captured by the route handler. So we allow passing if path matches pattern.
-            if len(path_parts) >= 2 and path_parts[1] == "mcp":
-                 return await call_next(request)
-
             return JSONResponse(
-                {"error": "Missing Serper API key. Provide it in the Authorization header or via path /{API_KEY}/mcp"},
+                {"error": "Missing Serper API key. Provide it in the Authorization header or via query param ?api_key=..."},
                 status_code=401,
             )
 
@@ -138,31 +133,11 @@ async def root_handler(request):
             <h1>Serper.dev MCP Server (Relay)</h1>
             <p>Status: <span style="color: green;">Online</span></p>
             <p>Gebruik deze URL in je MCP client:</p>
-            <code>https://serper-mcp.pontifexxpaddock.com/{JOUW_SERPER_KEY}/mcp</code>
-            <br><br>
-            <small>Internal Route: /mcp (SSE)</small>
+            <code>https://serper-mcp.pontifexxpaddock.com/mcp?api_key={JOUW_SERPER_KEY}</code>
         </body>
     </html>
     """
     return HTMLResponse(content=html_content)
-
-async def proxy_sse(request):
-    """
-    Proxy request from /{api_key}/mcp to the internal /mcp (SSE) endpoint.
-    """
-    api_key = request.path_params.get("api_key")
-    if api_key:
-        request.state.api_key = api_key
-    
-    # Find the SSE route (which is mapped to /mcp in this FastMCP version)
-    for route in request.app.routes:
-        if hasattr(route, "path") and route.path == "/mcp":
-            # CRITICAL FIX: Rewrite the path in the request scope so the internal handler accepts it
-            request.scope["path"] = "/mcp"
-            request.scope["raw_path"] = b"/mcp"
-            return await route.endpoint(request)
-            
-    return JSONResponse({"error": "Internal SSE endpoint (/mcp) not found"}, status_code=500)
 
 def main():
     middleware = [
@@ -173,11 +148,7 @@ def main():
     
     starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
-    starlette_app.add_route("/{api_key}/mcp", proxy_sse, methods=["GET"])
     
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
     uvicorn.run(starlette_app, host=host, port=port, ws="none")
-
-if __name__ == "__main__":
-    main()
