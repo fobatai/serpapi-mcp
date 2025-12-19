@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, HTMLResponse
 
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_request
@@ -61,6 +61,7 @@ async def visit_page(url: str) -> str:
 # 3. Middleware
 class ApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
+        # Skip for healthcheck and root
         if request.url.path in ["/", "/healthcheck"]:
             return await call_next(request)
 
@@ -69,6 +70,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         if auth and auth.startswith("Bearer "):
             api_key = auth.split(" ", 1)[1].strip()
         
+        # KEY CHANGE: Check query parameters
         if not api_key:
             api_key = request.query_params.get("api_key")
             
@@ -77,7 +79,7 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         if not api_key:
             return JSONResponse(
-                {"error": "Missing Serper API key. Use ?api_key=..."},
+                {"error": "Missing Serper API key. Provide it in the Authorization header or via query param ?api_key=..."},
                 status_code=401,
             )
         
@@ -85,23 +87,27 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 # 4. Handlers
-async def healthcheck(request):
+async def healthcheck_handler(request):
     return JSONResponse({"status": "healthy"})
 
-async def homepage(request):
-    # Print routes for debugging
+async def root_handler(request):
+    # Print routes for debugging, robust against missing attributes
     routes_info = []
     for route in request.app.routes:
-        info = {"type": type(route).__name__}
-        if hasattr(route, "path"):
-            info["path"] = route.path
-        if hasattr(route, "methods") and route.methods:
-            info["methods"] = list(route.methods)
-        routes_info.append(info)
-        
+        try:
+            info = {"type": type(route).__name__}
+            if hasattr(route, "path"):
+                info["path"] = route.path
+            if hasattr(route, "methods") and route.methods:
+                info["methods"] = list(route.methods)
+            routes_info.append(info)
+        except Exception as e:
+            routes_info.append({"error": str(e), "repr": str(route)})
+            
     return JSONResponse({
-        "service": "Serper MCP",
-        "routes": routes_info
+        "status": "online", 
+        "service": "Serper.dev MCP Server",
+        "debug_routes": routes_info
     })
 
 def main():
@@ -111,12 +117,11 @@ def main():
     ]
     
     # Gebruik de native FastMCP http app builder
-    # Dit zorgt dat SSE en Messages endpoints automatisch correct worden ingesteld
     starlette_app = mcp.http_app(middleware=middleware, stateless_http=True, json_response=True)
     
     # Overschrijf/Voeg toe onze eigen routes
-    starlette_app.add_route("/", homepage, methods=["GET"])
-    starlette_app.add_route("/healthcheck", healthcheck, methods=["GET"])
+    starlette_app.add_route("/", root_handler, methods=["GET"])
+    starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
     
     print("🚀 Starting Uvicorn (Starlette)...")
     host = os.getenv("MCP_HOST", "0.0.0.0")
