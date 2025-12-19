@@ -36,7 +36,8 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         if not api_key and len(path_parts) >= 2 and path_parts[1] == "mcp":
             api_key = path_parts[0]
-            new_path = "/" + "/".join(path_parts[1:])
+            # Rewrite path to /sse which is the standard FastMCP endpoint
+            new_path = "/sse"
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode("utf-8")
 
