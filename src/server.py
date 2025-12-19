@@ -36,15 +36,17 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         if not api_key and len(path_parts) >= 2 and path_parts[1] == "mcp":
             api_key = path_parts[0]
-            # Rewrite path to /sse which is the standard FastMCP endpoint
-            new_path = "/sse"
-            request.scope["path"] = new_path
-            request.scope["raw_path"] = new_path.encode("utf-8")
+            # No path rewriting here anymore. We handle this via explicit route proxying.
 
         if not api_key:
             api_key = os.getenv("SERPER_API_KEY")
 
         if not api_key:
+            # If we are in the proxy route, the key might not be extracted yet by middleware logic
+            # but will be captured by the route handler. So we allow passing if path matches pattern.
+            if len(path_parts) >= 2 and path_parts[1] == "mcp":
+                 return await call_next(request)
+
             return JSONResponse(
                 {"error": "Missing Serper API key. Provide it in the Authorization header or via path /{API_KEY}/mcp"},
                 status_code=401,
@@ -142,14 +144,32 @@ async def root_handler(request):
     """
     return HTMLResponse(content=html_content)
 
+async def proxy_sse(request):
+    """
+    Proxy request from /{api_key}/mcp to the internal /sse endpoint.
+    This allows us to capture the API key from the URL path.
+    """
+    api_key = request.path_params.get("api_key")
+    if api_key:
+        request.state.api_key = api_key
+    
+    # Find the SSE route in the app's router
+    for route in request.app.routes:
+        if hasattr(route, "path") and route.path == "/sse":
+            return await route.endpoint(request)
+            
+    return JSONResponse({"error": "Internal SSE endpoint not found"}, status_code=500)
+
 def main():
     middleware = [
         Middleware(ApiKeyMiddleware),
         Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
     ]
     starlette_app = mcp.http_app(middleware=middleware, stateless_http=True, json_response=True)
+    
     starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
+    starlette_app.add_route("/{api_key}/mcp", proxy_sse, methods=["GET"])
     
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
