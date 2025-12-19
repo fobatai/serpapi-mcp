@@ -106,12 +106,17 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
         # 3. Validate API key exists
         if not api_key:
-            return JSONResponse(
-                {
-                    "error": "Missing API key. Use path format /{API_KEY}/mcp or Authorization: Bearer {API_KEY} header"
-                },
-                status_code=401,
-            )
+            # Check for environment variable fallback
+            env_api_key = os.getenv("SERPAPI_API_KEY")
+            if env_api_key:
+                api_key = env_api_key
+            else:
+                return JSONResponse(
+                    {
+                        "error": "Missing API key. Use path format /{API_KEY}/mcp, Authorization: Bearer {API_KEY} header, or set SERPAPI_API_KEY environment variable"
+                    },
+                    status_code=401,
+                )
 
         # Store API key in request state for tools to access
         request.state.api_key = api_key
