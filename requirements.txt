@@ -4,7 +4,7 @@ starlette>=0.50.0
 uvicorn>=0.38.0
 httpx>=0.28.0
 python-dotenv>=1.0.0
-fastapi>=0.109.0
+sse-starlette>=1.8.0
 
 # Script dependencies (Excel & OpenAI)
 openai>=1.0.0

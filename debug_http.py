@@ -19,10 +19,26 @@ async def debug_connection():
             print(f"Root Status: {root_resp.status_code}")
             print(f"Root Body: {root_resp.text}")
 
-            # 2. Probeer een simpele GET request naar MCP endpoint
-            print("\n--- Stap 1: GET Request naar MCP ---")
+            # 2. Probeer de SSE stream te lezen
+            print("\n--- Stap 1: SSE Stream Test ---")
             headers = {"Accept": "text/event-stream"}
-            response = await client.get(FULL_URL, headers=headers, follow_redirects=False)
+            
+            async with client.stream("GET", FULL_URL, headers=headers, follow_redirects=False, timeout=10.0) as response:
+                print(f"Status Code: {response.status_code}")
+                print(f"Headers: {dict(response.headers)}")
+                
+                print("\nLuisteren naar events...")
+                count = 0
+                async for line in response.aiter_lines():
+                    if line:
+                        print(f"Chunk: {line}")
+                        count += 1
+                    if count >= 5:
+                        print("... (gestopt na 5 regels)")
+                        break
+                
+                if count == 0:
+                    print("⚠️ Geen data ontvangen! Stream is leeg.")
             
             print(f"Status Code: {response.status_code}")
             print(f"Headers: {dict(response.headers)}")
