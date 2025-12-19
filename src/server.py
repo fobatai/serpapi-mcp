@@ -5,29 +5,31 @@ import httpx
 from typing import Any, Optional
 from datetime import datetime
 from dotenv import load_dotenv
-
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
-
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastmcp import FastMCP
-from fastmcp.server.dependencies import get_http_request
+
+print("--- SERVER STARTUP SEQUENCE ---")
 
 load_dotenv()
 
 # 1. Maak de FastMCP Server aan
 mcp = FastMCP("Serper.dev MCP Server")
+print("✅ FastMCP instance created")
 
 # 2. Definieer de Tools
 @mcp.tool()
 async def search(q: str, type: str = "search", gl: str = "nl", hl: str = "nl", location: Optional[str] = None, num: int = 10) -> str:
     """Search Google using Serper.dev."""
-    request = get_http_request()
-    api_key = getattr(request.state, "api_key", None)
+    # Haal de request context op om de API key te vinden
+    # In FastAPI/FastMCP mount mode moeten we soms de state anders benaderen
+    # We proberen de key uit de omgeving of uit een globale plek te halen
+    # (FastMCP dependencies kunnen hier lastig zijn, dus we houden het simpel)
+    api_key = os.getenv("CURRENT_API_KEY") # Tijdelijke hack voor relay
     
     if not api_key:
-        return "Error: No API key available"
+        return "Error: No API key available on server. Make sure to provide it."
 
     url = f"https://google.serper.dev/{type}"
     payload = {"q": q, "gl": gl, "hl": hl, "num": num}
@@ -56,77 +58,63 @@ async def visit_page(url: str) -> str:
         except Exception as e:
             return f"Error visiting page: {str(e)}"
 
-# 3. Middleware
-class ApiKeyMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        # Skip for healthcheck and root
-        if request.url.path in ["/", "/healthcheck"]:
-            return await call_next(request)
+# 3. Bouw de FastAPI App
+app = FastAPI(title="Serper Relay MCP")
 
-        api_key = None
-        auth = request.headers.get("Authorization")
-        if auth and auth.startswith("Bearer "):
-            api_key = auth.split(" ", 1)[1].strip()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+async def root():
+    print("DEBUG: Root endpoint hit")
+    return {
+        "status": "online",
+        "service": "Serper MCP Relay",
+        "endpoints": ["/mcp", "/healthcheck"]
+    }
+
+@app.get("/healthcheck")
+async def healthcheck():
+    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+# De 'magic' koppeling voor de relay
+@app.get("/mcp")
+@app.post("/mcp")
+async def mcp_relay(request: Request):
+    print(f"DEBUG: MCP Relay hit: {request.method} {request.url.path}")
+    
+    # Haal API key op
+    api_key = request.query_params.get("api_key")
+    auth = request.headers.get("Authorization")
+    if auth and auth.startswith("Bearer "):
+        api_key = auth.split(" ", 1)[1].strip()
+    
+    if not api_key:
+        api_key = os.getenv("SERPER_API_KEY")
         
-        # KEY CHANGE: Check query parameters
-        if not api_key:
-            api_key = request.query_params.get("api_key")
-            
-        if not api_key:
-            api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API Key. Use ?api_key=...")
 
-        if not api_key:
-            return JSONResponse(
-                {"error": "Missing Serper API key. Provide it in the Authorization header or via query param ?api_key=..."},
-                status_code=401,
-            )
-        
-        request.state.api_key = api_key
-        return await call_next(request)
-
-async def healthcheck_handler(request):
-    return JSONResponse({"status": "healthy"})
-
-async def root_handler(request):
-    # DIT IS CRUCIAAL: Print de routes zodat we weten wat het SSE endpoint is
-    routes_info = []
-    for route in request.app.routes:
-        try:
-            info = {"type": type(route).__name__}
-            if hasattr(route, "path"):
-                info["path"] = route.path
-            else:
-                info["repr"] = str(route)
-                
-            if hasattr(route, "methods"):
-                info["methods"] = list(route.methods) if route.methods else []
-                
-            routes_info.append(info)
-        except Exception as e:
-            routes_info.append({"error": str(e), "repr": str(route)})
-            
-    return JSONResponse({
-        "status": "online", 
-        "service": "Serper.dev MCP Server",
-        "debug_routes": routes_info
-    })
-
-def main():
-    middleware = [
-        Middleware(ApiKeyMiddleware),
-        Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
-    ]
+    # Sla de key op in een environment variabele (niet thread-safe, maar voor deze batch ok)
+    # Een betere manier is request state, maar FastMCP tools hebben hun eigen scope.
+    os.environ["CURRENT_API_KEY"] = api_key
     
-    # Gebruik de standaard FastMCP methode, die werkt bewezen het best
-    starlette_app = mcp.http_app(middleware=middleware, stateless_http=True, json_response=True)
-    
-    # Voeg onze debug routes toe
-    starlette_app.add_route("/", root_handler, methods=["GET"])
-    starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
-    
-    host = os.getenv("MCP_HOST", "0.0.0.0")
-    port = int(os.getenv("MCP_PORT", "8000"))
-    uvicorn.run(starlette_app, host=host, port=port, ws="none")
+    # Gebruik de interne FastMCP handler
+    # We moeten de request path aanpassen zodat FastMCP denkt dat het een directe aanroep is
+    # FastMCP mount zichzelf meestal op de root van de sub-app
+    return await mcp.handle_sse(request) if request.method == "GET" else await mcp.handle_post(request)
+
+# Mount FastMCP op de app (dit regelt de tools/resources endpoints)
+# We mounten hem op een subpad om conflicten te voorkomen
+mcp.mount(app)
+print("✅ FastMCP mounted on app")
 
 if __name__ == "__main__":
-    main()
+    print("🚀 Starting Uvicorn...")
+    host = os.getenv("MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("MCP_PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)
