@@ -91,10 +91,19 @@ async def root_handler(request):
     # DIT IS CRUCIAAL: Print de routes zodat we weten wat het SSE endpoint is
     routes_info = []
     for route in request.app.routes:
-        info = {"path": getattr(route, "path", str(route))}
-        if hasattr(route, "methods"):
-            info["methods"] = list(route.methods)
-        routes_info.append(info)
+        try:
+            info = {"type": type(route).__name__}
+            if hasattr(route, "path"):
+                info["path"] = route.path
+            else:
+                info["repr"] = str(route)
+                
+            if hasattr(route, "methods"):
+                info["methods"] = list(route.methods) if route.methods else []
+                
+            routes_info.append(info)
+        except Exception as e:
+            routes_info.append({"error": str(e), "repr": str(route)})
             
     return JSONResponse({
         "status": "online", 
