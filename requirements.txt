@@ -1,0 +1,12 @@
+# Server dependencies
+fastmcp>=2.13.0.2
+starlette>=0.50.0
+uvicorn>=0.38.0
+httpx>=0.28.0
+python-dotenv>=1.0.0
+fastapi>=0.109.0
+
+# Script dependencies (Excel & OpenAI)
+openai>=1.0.0
+pandas>=2.0.0
+openpyxl>=3.1.0
