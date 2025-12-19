@@ -88,47 +88,33 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/healthcheck":
             return await call_next(request)
 
-        # 1. Security Check: Shared Secret (Protects access to the server)
-        server_auth_token = os.getenv("MCP_AUTH_TOKEN")
-        auth_header = request.headers.get("Authorization")
-        client_token = None
+        api_key = None
 
-        if auth_header and auth_header.startswith("Bearer "):
-            client_token = auth_header.split(" ", 1)[1].strip()
+        # 1. Try to get API key from Authorization header
+        auth = request.headers.get("Authorization")
+        if auth and auth.startswith("Bearer "):
+            api_key = auth.split(" ", 1)[1].strip()
 
-        if server_auth_token:
-            if client_token != server_auth_token:
-                return JSONResponse(
-                    {"error": "Unauthorized: Invalid or missing authentication token"},
-                    status_code=401,
-                )
+        # 2. Try to get API key from URL path (format: /{API_KEY}/mcp)
+        original_path = request.scope.get("path", "")
+        path_parts = original_path.strip("/").split("/") if original_path else []
 
-        # 2. Resolve SerpApi Key (Needed for the search tool)
-        # Priority 1: Environment Variable (Server-side configuration)
-        api_key = os.getenv("SERPAPI_API_KEY")
+        if not api_key and len(path_parts) >= 2 and path_parts[1] == "mcp":
+            api_key = path_parts[0]
+            # Rewrite path to remove the API key for the underlying MCP app
+            new_path = "/" + "/".join(path_parts[1:])
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode("utf-8")
 
-        # Priority 2: Client provided key (via path or header) - Fallback
+        # 3. Fallback to environment variable ONLY if no key was provided in the request
         if not api_key:
-            # Check path injection (e.g. /KEY/mcp)
-            original_path = request.scope.get("path", "")
-            path_parts = original_path.strip("/").split("/") if original_path else []
-            
-            if len(path_parts) >= 2 and path_parts[1] == "mcp":
-                api_key = path_parts[0]
-                # Rewrite path to strip key
-                new_path = "/" + "/".join(path_parts[1:])
-                request.scope["path"] = new_path
-                request.scope["raw_path"] = new_path.encode("utf-8")
-            
-            # Check header if still not found and no auth token was enforced (or if client reused header for api key)
-            elif not server_auth_token and client_token:
-                api_key = client_token
+            api_key = os.getenv("SERPAPI_API_KEY")
 
-        # 3. Final Validation
+        # 4. If still no API key, return error
         if not api_key:
-             return JSONResponse(
+            return JSONResponse(
                 {
-                    "error": "Missing API key. Configure SERPAPI_API_KEY on server OR MCP_AUTH_TOKEN."
+                    "error": "Missing SerpApi API key. Provide it in the Authorization header or via path /{API_KEY}/mcp"
                 },
                 status_code=401,
             )
