@@ -251,6 +251,57 @@ async def healthcheck_handler(request):
     )
 
 
+async def root_handler(request):
+    html_content = """
+    <html>
+        <head>
+            <title>SerpApi MCP Server</title>
+            <style>
+                body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
+                code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
+                pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
+                .auth-box { border-left: 5px solid #007bff; background: #e7f3ff; padding: 15px; margin: 20px 0; }
+            </style>
+        </head>
+        <body>
+            <h1>SerpApi MCP Server</h1>
+            <p>Deze server is een Model Context Protocol (MCP) interface voor SerpApi.</p>
+            
+            <div class="auth-box">
+                <strong>Authenticatie Vereist:</strong><br>
+                Deze server werkt als een relay. Je moet je eigen SerpApi API-sleutel meesturen.
+            </div>
+
+            <h2>Hoe te gebruiken</h2>
+            
+            <h3>1. Via de URL (Aanbevolen voor SSE)</h3>
+            <p>Gebruik je API-sleutel direct in het pad:</p>
+            <code>http://serper-mcp.pontifexxpaddock.com/{JOUW_API_KEY}/mcp</code>
+
+            <h3>2. Via Authorization Header</h3>
+            <p>Stuur je sleutel mee als Bearer token:</p>
+            <pre>Authorization: Bearer JOUW_API_KEY</pre>
+
+            <h2>Claude Desktop Configuratie</h2>
+            <p>Voeg dit toe aan je <code>claude_desktop_config.json</code>:</p>
+            <pre>
+{
+  "mcpServers": {
+    "serpapi-remote": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sse", "http://serper-mcp.pontifexxpaddock.com/JOUW_API_KEY/mcp"]
+    }
+  }
+}</pre>
+            <hr>
+            <p><small>Status: <a href="/healthcheck">Healthy</a></small></p>
+        </body>
+    </html>
+    """
+    from starlette.responses import HTMLResponse
+    return HTMLResponse(content=html_content)
+
+
 def main():
     middleware = [
         Middleware(RequestMetricsMiddleware),
@@ -267,6 +318,7 @@ def main():
         middleware=middleware, stateless_http=True, json_response=True
     )
 
+    starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
 
     host = os.getenv("MCP_HOST", "0.0.0.0")
