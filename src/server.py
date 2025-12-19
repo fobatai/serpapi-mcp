@@ -157,6 +157,9 @@ async def proxy_sse(request):
     # Find the SSE route (which is mapped to /mcp in this FastMCP version)
     for route in request.app.routes:
         if hasattr(route, "path") and route.path == "/mcp":
+            # CRITICAL FIX: Rewrite the path in the request scope so the internal handler accepts it
+            request.scope["path"] = "/mcp"
+            request.scope["raw_path"] = b"/mcp"
             return await route.endpoint(request)
             
     return JSONResponse({"error": "Internal SSE endpoint (/mcp) not found"}, status_code=500)
