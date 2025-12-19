@@ -95,7 +95,7 @@ async def homepage(request):
         info = {"type": type(route).__name__}
         if hasattr(route, "path"):
             info["path"] = route.path
-        if hasattr(route, "methods"):
+        if hasattr(route, "methods") and route.methods:
             info["methods"] = list(route.methods)
         routes_info.append(info)
         

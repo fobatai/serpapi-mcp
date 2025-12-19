@@ -21,7 +21,8 @@ async def debug_connection():
 
             # 2. Probeer een simpele GET request naar MCP endpoint
             print("\n--- Stap 1: GET Request naar MCP ---")
-            response = await client.get(FULL_URL, follow_redirects=False)
+            headers = {"Accept": "text/event-stream"}
+            response = await client.get(FULL_URL, headers=headers, follow_redirects=False)
             
             print(f"Status Code: {response.status_code}")
             print(f"Headers: {dict(response.headers)}")
