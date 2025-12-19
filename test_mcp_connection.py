@@ -14,7 +14,7 @@ if not SERPER_KEY:
     exit(1)
 
 # De volledige URL die we willen testen
-MCP_URL = f"{BASE_URL}/mcp?api_key={SERPER_KEY}"
+MCP_URL = f"{BASE_URL}/sse?api_key={SERPER_KEY}"
 
 async def main():
     print(f"🔄 Verbinden met MCP Server: {MCP_URL} ...")
