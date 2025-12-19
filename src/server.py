@@ -131,39 +131,35 @@ async def healthcheck_handler(request):
     })
 
 async def root_handler(request):
-    routes = [f"{type(r).__name__}: {r.path}" for r in request.app.routes if hasattr(r, 'path')]
-    # Also include Mounts
-    for r in request.app.routes:
-        if not hasattr(r, 'path'):
-            routes.append(str(r))
-            
-    return JSONResponse({
-        "status": "online", 
-        "service": "Serper.dev MCP Server",
-        "debug_routes": routes
-    })
+    html_content = """
+    <html>
+        <head><title>Serper.dev MCP Server</title></head>
+        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
+            <h1>Serper.dev MCP Server (Relay)</h1>
+            <p>Status: <span style="color: green;">Online</span></p>
+            <p>Gebruik deze URL in je MCP client:</p>
+            <code>https://serper-mcp.pontifexxpaddock.com/{JOUW_SERPER_KEY}/mcp</code>
+            <br><br>
+            <small>Internal Route: /mcp (SSE)</small>
+        </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
 
 async def proxy_sse(request):
     """
-    Proxy request from /{api_key}/mcp to the internal /sse endpoint.
+    Proxy request from /{api_key}/mcp to the internal /mcp (SSE) endpoint.
     """
-    print(f"DEBUG: Proxy hit for {request.url.path}")
     api_key = request.path_params.get("api_key")
     if api_key:
         request.state.api_key = api_key
     
-    # Find the SSE route by checking the endpoint name or path
+    # Find the SSE route (which is mapped to /mcp in this FastMCP version)
     for route in request.app.routes:
-        if hasattr(route, "path") and route.path == "/sse":
-            print("DEBUG: Found /sse route, forwarding...")
+        if hasattr(route, "path") and route.path == "/mcp":
             return await route.endpoint(request)
-        # Soms heet de functie 'handle_sse'
-        if hasattr(route, "endpoint") and getattr(route.endpoint, "__name__", "") == "handle_sse":
-             print("DEBUG: Found handle_sse endpoint, forwarding...")
-             return await route.endpoint(request)
             
-    print("DEBUG: SSE route NOT found!")
-    return JSONResponse({"error": "Internal SSE endpoint not found", "routes": [str(r) for r in request.app.routes]}, status_code=500)
+    return JSONResponse({"error": "Internal SSE endpoint (/mcp) not found"}, status_code=500)
 
 def main():
     middleware = [
