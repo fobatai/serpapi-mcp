@@ -3,329 +3,131 @@ import time
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, HTMLResponse
 from starlette.requests import Request
 from fastmcp import FastMCP
 from fastmcp.server.dependencies import get_http_request
 from dotenv import load_dotenv
 import os
 import json
-from typing import Any
-import serpapi
+from typing import Any, Optional
+import httpx
 import logging
 from datetime import datetime
 
 load_dotenv()
 
-mcp = FastMCP("SerpApi MCP Server")
+mcp = FastMCP("Serper.dev MCP Server")
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-
-def emit_metric(namespace: str, metrics: dict, dimensions: dict = {}):
-    emf_event = {
-        "_aws": {
-            "Timestamp": int(time.time() * 1000),
-            "CloudWatchMetrics": [
-                {
-                    "Namespace": namespace,
-                    "Dimensions": [list(dimensions.keys())] if dimensions else [],
-                    "Metrics": [
-                        {"Name": name, "Unit": unit}
-                        for name, (_, unit) in metrics.items()
-                    ],
-                }
-            ],
-        },
-        **dimensions,
-        **{name: value for name, (value, _) in metrics.items()},
-    }
-
-    logger.info(json.dumps(emf_event))
-
-
-def extract_error_response(exception) -> str:
-    """
-    Helper function to extract meaningful error information from nested exceptions.
-
-    Traverses exception.args[0] chain until it finds a valid .response object,
-    then attempts to extract JSON from response.json(). Falls back to str(e).
-
-    Args:
-        exception: The exception to process
-
-    Returns:
-        str: Formatted error message with response data if available
-    """
-    current = exception
-    max_depth = 10
-    depth = 0
-
-    while depth < max_depth:
-        if hasattr(current, "response") and current.response is not None:
-            try:
-                response_data = current.response.json()
-                return json.dumps(response_data, indent=2)
-            except (ValueError, AttributeError, TypeError):
-                try:
-                    return current.response.text
-                except (AttributeError, TypeError):
-                    pass
-
-        if hasattr(current, "args") and current.args and len(current.args) > 0:
-            current = current.args[0]
-            depth += 1
-        else:
-            break
-
-    # Fallback
-    return str(exception)
-
-
 class ApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication for healthcheck endpoint
-        if request.url.path == "/healthcheck":
+        if request.url.path == "/healthcheck" or request.url.path == "/":
             return await call_next(request)
 
         api_key = None
-
-        # 1. Try to get API key from Authorization header
         auth = request.headers.get("Authorization")
         if auth and auth.startswith("Bearer "):
             api_key = auth.split(" ", 1)[1].strip()
 
-        # 2. Try to get API key from URL path (format: /{API_KEY}/mcp)
         original_path = request.scope.get("path", "")
         path_parts = original_path.strip("/").split("/") if original_path else []
 
         if not api_key and len(path_parts) >= 2 and path_parts[1] == "mcp":
             api_key = path_parts[0]
-            # Rewrite path to remove the API key for the underlying MCP app
             new_path = "/" + "/".join(path_parts[1:])
             request.scope["path"] = new_path
             request.scope["raw_path"] = new_path.encode("utf-8")
 
-        # 3. Fallback to environment variable ONLY if no key was provided in the request
         if not api_key:
-            api_key = os.getenv("SERPAPI_API_KEY")
+            api_key = os.getenv("SERPER_API_KEY")
 
-        # 4. If still no API key, return error
         if not api_key:
             return JSONResponse(
-                {
-                    "error": "Missing SerpApi API key. Provide it in the Authorization header or via path /{API_KEY}/mcp"
-                },
+                {"error": "Missing Serper API key. Provide it in the Authorization header or via path /{API_KEY}/mcp"},
                 status_code=401,
             )
 
-        # Store API key in request state for tools to access
         request.state.api_key = api_key
         return await call_next(request)
 
-
-class RequestMetricsMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        start = time.time()
-        response = await call_next(request)
-        duration = time.time() - start
-
-        emit_metric(
-            namespace="mcp",
-            metrics={
-                "RequestCount": (1, "Count"),
-                "ResponseTime": (duration * 1000, "Milliseconds"),
-            },
-            dimensions={
-                "Service": "mcp-server-api",
-                "Method": request.method,
-                "StatusCode": str(response.status_code),
-            },
-        )
-
-        return response
-
-
 @mcp.tool()
-async def search(params: dict[str, Any] = {}, mode: str = "complete") -> str:
-    """Universal search tool supporting all SerpApi engines and result types.
-
-    This tool consolidates weather, stock, and general search functionality into a single interface.
-    It processes multiple result types and returns structured JSON output.
-
+async def search(q: str, type: str = "search", gl: str = "nl", hl: str = "nl", location: Optional[str] = None, num: int = 10) -> str:
+    """Search Google using Serper.dev.
+    
     Args:
-        params: Dictionary of engine-specific parameters. Common parameters include:
-            - q: Search query (required for most engines)
-            - engine: Search engine to use (default: "google_light")
-            - location: Geographic location filter
-            - num: Number of results to return
-
-        mode: Response mode (default: "complete")
-            - "complete": Returns full JSON response with all fields
-            - "compact": Returns JSON response with metadata fields removed
-
-    Returns:
-        A JSON string containing search results or an error message.
-
-    Examples:
-        Weather: {"params": {"q": "weather in London", "engine": "google"}, "mode": "complete"}
-        Stock: {"params": {"q": "AAPL stock", "engine": "google"}, "mode": "complete"}
-        General: {"params": {"q": "coffee shops", "engine": "google_light", "location": "Austin, TX"}, "mode": "complete"}
-        Compact: {"params": {"q": "news"}, "mode": "compact"}
-
-    Supported engines:
-        - google
-        - google_light
-        - google_flights
-        - google_hotels
-        - google_images
-        - google_news
-        - google_local
-        - google_shopping
-        - google_jobs
-        - bing
-        - yahoo
-        - duckduckgo
-        - youtube_search
-        - baidu
-        - ebay
+        q: The search query
+        type: Search type ('search', 'images', 'news', 'places', 'shopping')
+        gl: Country code (default: nl)
+        hl: Language code (default: nl)
+        location: Specific location (e.g. 'Amsterdam, Netherlands')
+        num: Number of results (default: 10)
     """
-
-    # Validate mode parameter
-    if mode not in ["complete", "compact"]:
-        return "Error: Invalid mode. Must be 'complete' or 'compact'"
-
     request = get_http_request()
-    if hasattr(request, "state") and request.state.api_key:
-        api_key = request.state.api_key
-    else:
-        return "Error: Unable to access API key from request context"
+    api_key = getattr(request.state, "api_key", None)
+    
+    if not api_key:
+        return "Error: No API key available"
 
-    search_params = {
-        "api_key": api_key,
-        "engine": "google_light",  # Fastest engine by default
-        **params,  # Include any additional parameters
+    url = f"https://google.serper.dev/{type}"
+    payload = {
+        "q": q,
+        "gl": gl,
+        "hl": hl,
+        "num": num
+    }
+    if location:
+        payload["location"] = location
+
+    headers = {
+        'X-API-KEY': api_key,
+        'Content-Type': 'application/json'
     }
 
-    try:
-        data = serpapi.search(search_params).as_dict()
-
-        # Apply mode-specific filtering
-        if mode == "compact":
-            # Remove specified fields for compact mode
-            fields_to_remove = [
-                "search_metadata",
-                "search_parameters",
-                "search_information",
-                "pagination",
-                "serpapi_pagination",
-            ]
-            for field in fields_to_remove:
-                data.pop(field, None)
-
-        # Return JSON response for both modes
-        return json.dumps(data, indent=2, ensure_ascii=False)
-
-    except serpapi.exceptions.HTTPError as e:
-        if "429" in str(e):
-            return f"Error: Rate limit exceeded. Please try again later."
-        elif "401" in str(e):
-            return f"Error: Invalid SerpApi API key. Check your API key in the path or Authorization header."
-        elif "403" in str(e):
-            return f"Error: SerpApi API key forbidden. Verify your subscription and key validity."
-        else:
-            error_msg = extract_error_response(e)
-            return f"Error: {error_msg}"
-    except Exception as e:
-        error_msg = extract_error_response(e)
-        return f"Error: {error_msg}"
-
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=payload, timeout=30.0)
+            response.raise_for_status()
+            return json.dumps(response.json(), indent=2, ensure_ascii=False)
+        except httpx.HTTPStatusError as e:
+            return f"Error from Serper.dev ({e.response.status_code}): {e.response.text}"
+        except Exception as e:
+            return f"Error connecting to Serper.dev: {str(e)}"
 
 async def healthcheck_handler(request):
-    return JSONResponse(
-        {
-            "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "service": "SerpApi MCP Server",
-        }
-    )
-
+    return JSONResponse({
+        "status": "healthy",
+        "service": "Serper.dev MCP Server",
+        "timestamp": datetime.utcnow().isoformat() + "Z"
+    })
 
 async def root_handler(request):
     html_content = """
     <html>
-        <head>
-            <title>SerpApi MCP Server</title>
-            <style>
-                body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
-                code { background: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: monospace; }
-                pre { background: #f4f4f4; padding: 15px; border-radius: 5px; overflow-x: auto; }
-                .auth-box { border-left: 5px solid #007bff; background: #e7f3ff; padding: 15px; margin: 20px 0; }
-            </style>
-        </head>
-        <body>
-            <h1>SerpApi MCP Server</h1>
-            <p>Deze server is een Model Context Protocol (MCP) interface voor SerpApi.</p>
-            
-            <div class="auth-box">
-                <strong>Authenticatie Vereist:</strong><br>
-                Deze server werkt als een relay. Je moet je eigen SerpApi API-sleutel meesturen.
-            </div>
-
-            <h2>Hoe te gebruiken</h2>
-            
-            <h3>1. Via de URL (Aanbevolen voor SSE)</h3>
-            <p>Gebruik je API-sleutel direct in het pad:</p>
-            <code>http://serper-mcp.pontifexxpaddock.com/{JOUW_API_KEY}/mcp</code>
-
-            <h3>2. Via Authorization Header</h3>
-            <p>Stuur je sleutel mee als Bearer token:</p>
-            <pre>Authorization: Bearer JOUW_API_KEY</pre>
-
-            <h2>Claude Desktop Configuratie</h2>
-            <p>Voeg dit toe aan je <code>claude_desktop_config.json</code>:</p>
-            <pre>
-{
-  "mcpServers": {
-    "serpapi-remote": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-sse", "http://serper-mcp.pontifexxpaddock.com/JOUW_API_KEY/mcp"]
-    }
-  }
-}</pre>
-            <hr>
-            <p><small>Status: <a href="/healthcheck">Healthy</a></small></p>
+        <head><title>Serper.dev MCP Server</title></head>
+        <body style="font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px;">
+            <h1>Serper.dev MCP Server (Relay)</h1>
+            <p>Status: <span style="color: green;">Online</span></p>
+            <p>Gebruik deze URL in je MCP client:</p>
+            <code>https://serper-mcp.pontifexxpaddock.com/{JOUW_SERPER_KEY}/mcp</code>
         </body>
     </html>
     """
-    from starlette.responses import HTMLResponse
     return HTMLResponse(content=html_content)
-
 
 def main():
     middleware = [
-        Middleware(RequestMetricsMiddleware),
         Middleware(ApiKeyMiddleware),
-        Middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        ),
+        Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
     ]
-    starlette_app = mcp.http_app(
-        middleware=middleware, stateless_http=True, json_response=True
-    )
-
+    starlette_app = mcp.http_app(middleware=middleware, stateless_http=True, json_response=True)
     starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
-
+    
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
-
     uvicorn.run(starlette_app, host=host, port=port, ws="none")
-
 
 if __name__ == "__main__":
     main()
