@@ -86,6 +86,29 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         request.state.api_key = api_key
         return await call_next(request)
 
+# OpenAI Batch API Fix: Inject Accept header for MCP endpoint
+# OpenAI doesn't send Accept header, causing FastMCP to return 406
+class AcceptHeaderMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path == "/mcp":
+            # Create new scope with injected Accept header
+            scope = dict(request.scope)
+            headers = [(k, v) for k, v in request.headers.raw]
+            
+            # Check if Accept header is missing or doesn't include required types
+            accept_header = request.headers.get("accept", "")
+            if "application/json" not in accept_header or "text/event-stream" not in accept_header:
+                # Remove existing Accept header if present
+                headers = [(k, v) for k, v in headers if k.lower() != b"accept"]
+                # Add the required Accept header
+                headers.append((b"accept", b"application/json, text/event-stream"))
+                scope["headers"] = headers
+                
+                from starlette.requests import Request
+                request = Request(scope, request.receive)
+        
+        return await call_next(request)
+
 # 4. Handlers
 async def healthcheck_handler(request):
     return JSONResponse({"status": "healthy"})
@@ -112,6 +135,7 @@ async def root_handler(request):
 
 def main():
     middleware = [
+        Middleware(AcceptHeaderMiddleware),  # Must be first to inject Accept header before other processing
         Middleware(ApiKeyMiddleware),
         Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
     ]
