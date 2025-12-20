@@ -117,7 +117,9 @@ def main():
     ]
     
     # Gebruik de native FastMCP http app builder
-    starlette_app = mcp.http_app(middleware=middleware, stateless_http=True, json_response=True)
+    # json_response=True verwijderd voor OpenAI Batch API compatibiliteit
+    # OpenAI stuurt geen Accept: application/json header, wat 406 errors veroorzaakte
+    starlette_app = mcp.http_app(middleware=middleware, stateless_http=True)
     
     # Overschrijf/Voeg toe onze eigen routes
     starlette_app.add_route("/", root_handler, methods=["GET"])
