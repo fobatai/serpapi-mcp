@@ -86,29 +86,6 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
         request.state.api_key = api_key
         return await call_next(request)
 
-# OpenAI Batch API Fix: Inject Accept header for MCP endpoint
-# OpenAI doesn't send Accept header, causing FastMCP to return 406
-class AcceptHeaderMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.url.path == "/mcp":
-            # Create new scope with injected Accept header
-            scope = dict(request.scope)
-            headers = [(k, v) for k, v in request.headers.raw]
-            
-            # Check if Accept header is missing or doesn't include required types
-            accept_header = request.headers.get("accept", "")
-            if "application/json" not in accept_header or "text/event-stream" not in accept_header:
-                # Remove existing Accept header if present
-                headers = [(k, v) for k, v in headers if k.lower() != b"accept"]
-                # Add the required Accept header
-                headers.append((b"accept", b"application/json, text/event-stream"))
-                scope["headers"] = headers
-                
-                from starlette.requests import Request
-                request = Request(scope, request.receive)
-        
-        return await call_next(request)
-
 # 4. Handlers
 async def healthcheck_handler(request):
     return JSONResponse({"status": "healthy"})
@@ -135,24 +112,59 @@ async def root_handler(request):
 
 def main():
     middleware = [
-        Middleware(AcceptHeaderMiddleware),  # Must be first to inject Accept header before other processing
         Middleware(ApiKeyMiddleware),
         Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]),
     ]
     
     # Gebruik de native FastMCP http app builder
-    # json_response=True verwijderd voor OpenAI Batch API compatibiliteit
-    # OpenAI stuurt geen Accept: application/json header, wat 406 errors veroorzaakte
     starlette_app = mcp.http_app(middleware=middleware, stateless_http=True)
     
     # Overschrijf/Voeg toe onze eigen routes
     starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
     
-    print("🚀 Starting Uvicorn (Starlette)...")
+    # ASGI Wrapper: Inject Accept header at the lowest level before FastMCP processes it
+    # This is needed because OpenAI's Batch API doesn't send the required Accept header
+    class AcceptHeaderASGIWrapper:
+        def __init__(self, app):
+            self.app = app
+        
+        async def __call__(self, scope, receive, send):
+            if scope["type"] == "http" and scope.get("path") == "/mcp":
+                # Check if Accept header is missing or incomplete
+                headers = list(scope.get("headers", []))
+                accept_present = False
+                accept_value = b""
+                
+                for i, (name, value) in enumerate(headers):
+                    if name.lower() == b"accept":
+                        accept_present = True
+                        accept_value = value
+                        break
+                
+                # If Accept header is missing or doesn't contain both required types
+                needs_injection = not accept_present or (
+                    b"application/json" not in accept_value or 
+                    b"text/event-stream" not in accept_value
+                )
+                
+                if needs_injection:
+                    # Remove existing Accept header if present
+                    headers = [(n, v) for n, v in headers if n.lower() != b"accept"]
+                    # Add the required Accept header
+                    headers.append((b"accept", b"application/json, text/event-stream"))
+                    scope = dict(scope)
+                    scope["headers"] = headers
+            
+            await self.app(scope, receive, send)
+    
+    # Wrap the Starlette app with our ASGI wrapper
+    wrapped_app = AcceptHeaderASGIWrapper(starlette_app)
+    
+    print("🚀 Starting Uvicorn (Starlette with ASGI wrapper)...")
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
-    uvicorn.run(starlette_app, host=host, port=port, ws="none")
+    uvicorn.run(wrapped_app, host=host, port=port, ws="none")
 
 if __name__ == "__main__":
     main()
