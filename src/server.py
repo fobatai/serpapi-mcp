@@ -18,6 +18,9 @@ print("--- SERVER STARTUP (Starlette Mode) ---")
 
 load_dotenv()
 
+# Version for deployment tracking - increment this with each deployment
+SERVER_VERSION = "1.0.3"
+
 # 1. Maak de FastMCP Server aan
 mcp = FastMCP("Serper.dev MCP Server")
 
@@ -62,7 +65,7 @@ async def visit_page(url: str) -> str:
 class ApiKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         # Skip for healthcheck and root
-        if request.url.path in ["/", "/healthcheck"]:
+        if request.url.path in ["/", "/healthcheck", "/version"]:
             return await call_next(request)
 
         api_key = None
@@ -88,7 +91,15 @@ class ApiKeyMiddleware(BaseHTTPMiddleware):
 
 # 4. Handlers
 async def healthcheck_handler(request):
-    return JSONResponse({"status": "healthy"})
+    return JSONResponse({"status": "healthy", "version": SERVER_VERSION})
+
+async def version_handler(request):
+    return JSONResponse({
+        "version": SERVER_VERSION,
+        "timestamp": datetime.now().isoformat(),
+        "asgi_wrapper": "AcceptHeaderASGIWrapper",
+        "stateless_http": True
+    })
 
 async def root_handler(request):
     # Print routes for debugging, robust against missing attributes
@@ -107,6 +118,7 @@ async def root_handler(request):
     return JSONResponse({
         "status": "online", 
         "service": "Serper.dev MCP Server",
+        "version": SERVER_VERSION,
         "debug_routes": routes_info
     })
 
@@ -122,6 +134,7 @@ def main():
     # Overschrijf/Voeg toe onze eigen routes
     starlette_app.add_route("/", root_handler, methods=["GET"])
     starlette_app.add_route("/healthcheck", healthcheck_handler, methods=["GET"])
+    starlette_app.add_route("/version", version_handler, methods=["GET"])
     
     # ASGI Wrapper: Inject Accept header at the lowest level before FastMCP processes it
     # This is needed because OpenAI's Batch API doesn't send the required Accept header
