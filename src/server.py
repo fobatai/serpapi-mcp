@@ -19,7 +19,7 @@ print("--- SERVER STARTUP (Starlette Mode) ---")
 load_dotenv()
 
 # Version for deployment tracking - increment this with each deployment
-SERVER_VERSION = "1.0.3"
+SERVER_VERSION = "1.0.4"
 
 # 1. Maak de FastMCP Server aan
 mcp = FastMCP("Serper.dev MCP Server")
@@ -50,8 +50,8 @@ async def search(q: str, type: str = "search", gl: str = "nl", hl: str = "nl", l
             return f"Error connecting to Serper.dev: {str(e)}"
 
 @mcp.tool()
-async def visit_page(url: str) -> str:
-    """Visit a webpage via Jina AI."""
+async def fetch(url: str) -> str:
+    """Fetch content from a webpage via Jina AI."""
     jina_url = f"https://r.jina.ai/{url}"
     headers = {"User-Agent": "Mozilla/5.0"}
     async with httpx.AsyncClient() as client:
@@ -59,7 +59,7 @@ async def visit_page(url: str) -> str:
             response = await client.get(jina_url, headers=headers, timeout=60.0)
             return response.text
         except Exception as e:
-            return f"Error visiting page: {str(e)}"
+            return f"Error fetching page: {str(e)}"
 
 # 3. Middleware
 class ApiKeyMiddleware(BaseHTTPMiddleware):

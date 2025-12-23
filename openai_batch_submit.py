@@ -68,7 +68,7 @@ def main():
             5. Successor if EOL
             
             CRITICAL INSTRUCTION:
-            Use the 'visit_page' tool to inspect search results and verify details on official websites. Do not rely solely on search snippets.
+            Use the 'fetch' tool to inspect search results and verify details on official websites. Do not rely solely on search snippets.
 
             OUTPUT FORMAT:
             Provide your report and then the results in JSON format within <json> tags.
