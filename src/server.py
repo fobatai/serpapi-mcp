@@ -19,25 +19,23 @@ print("--- SERVER STARTUP (Starlette Mode) ---")
 load_dotenv()
 
 # Version for deployment tracking - increment this with each deployment
-SERVER_VERSION = "1.0.4"
+SERVER_VERSION = "1.0.5"
 
 # 1. Maak de FastMCP Server aan
 mcp = FastMCP("Serper.dev MCP Server")
 
 # 2. Definieer de Tools
 @mcp.tool()
-async def search(q: str, type: str = "search", gl: str = "nl", hl: str = "nl", location: Optional[str] = None, num: int = 10) -> str:
-    """Search Google using Serper.dev."""
+async def search(query: str) -> str:
+    """Search Google using Serper.dev. Returns search results for the given query."""
     request = get_http_request()
     api_key = getattr(request.state, "api_key", None)
     
     if not api_key:
         return "Error: No API key available"
 
-    url = f"https://google.serper.dev/{type}"
-    payload = {"q": q, "gl": gl, "hl": hl, "num": num}
-    if location:
-        payload["location"] = location
+    url = "https://google.serper.dev/search"
+    payload = {"q": query, "gl": "nl", "hl": "nl", "num": 10}
 
     headers = {'X-API-KEY': api_key, 'Content-Type': 'application/json'}
 
