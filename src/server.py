@@ -19,7 +19,7 @@ print("--- SERVER STARTUP (Starlette Mode) ---")
 load_dotenv()
 
 # Version for deployment tracking - increment this with each deployment
-SERVER_VERSION = "1.0.5"
+SERVER_VERSION = "1.0.6"
 
 # 1. Maak de FastMCP Server aan
 mcp = FastMCP("Serper.dev MCP Server")
@@ -48,9 +48,9 @@ async def search(query: str) -> str:
             return f"Error connecting to Serper.dev: {str(e)}"
 
 @mcp.tool()
-async def fetch(url: str) -> str:
-    """Fetch content from a webpage via Jina AI."""
-    jina_url = f"https://r.jina.ai/{url}"
+async def fetch(id: str) -> str:
+    """Fetch content from a webpage. The id should be a URL to retrieve."""
+    jina_url = f"https://r.jina.ai/{id}"
     headers = {"User-Agent": "Mozilla/5.0"}
     async with httpx.AsyncClient() as client:
         try:

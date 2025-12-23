@@ -35,10 +35,10 @@ def main():
         print(f"Bestand '{BESTANDSNAAM}' niet gevonden!")
         return
 
-    # Voor de test pakken we even 20 items om te zien of de MCP relay goed werkt
-    if len(df) > 20:
-        df_to_process = df.sample(n=20, random_state=42) 
-        print(f"Testmodus: 20 items geselecteerd uit {len(df)} regels.")
+    # DEBUG: Reduced to 1 item for faster testing
+    if len(df) > 1:
+        df_to_process = df.sample(n=1, random_state=42) 
+        print(f"Testmodus: 1 item geselecteerd uit {len(df)} regels.")
     else:
         df_to_process = df
     
