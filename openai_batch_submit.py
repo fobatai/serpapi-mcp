@@ -19,7 +19,7 @@ BESTANDSNAAM = "excel.xlsx"
 JSONL_BESTAND = "batch_input_mcp_research.jsonl"
 
 # Remote MCP Configuratie
-MCP_SERVER_URL = f"https://serperremotemcp-waxdvq-4d01cc-18-156-170-236.traefik.me/mcp?api_key={SERPAPI_API_KEY}"
+MCP_SERVER_URL = f"https://serper-mcp.pontifexxpaddock.com/mcp?api_key={SERPAPI_API_KEY}"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 

@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 # Configuratie laden
 load_dotenv()
 SERPER_KEY = os.getenv("SERPAPI_API_KEY") # We gebruiken deze variabele naam voor de Serper key
-BASE_URL = "https://serperremotemcp-waxdvq-4d01cc-18-156-170-236.traefik.me"
+BASE_URL = "https://serper-mcp.pontifexxpaddock.com"
 
 if not SERPER_KEY:
     print("❌ FOUT: Geen SERPAPI_API_KEY gevonden in .env")

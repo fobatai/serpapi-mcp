@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Configuratie
-BASE_URL = "https://serperremotemcp-waxdvq-4d01cc-18-156-170-236.traefik.me"
+BASE_URL = "https://serper-mcp.pontifexxpaddock.com"
 API_KEY = os.getenv("SERPAPI_API_KEY", "")
 
 def check_version():

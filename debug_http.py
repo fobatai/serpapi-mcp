@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 SERPER_KEY = os.getenv("SERPAPI_API_KEY")
-BASE_URL = "https://serperremotemcp-waxdvq-4d01cc-18-156-170-236.traefik.me"
+BASE_URL = "https://serper-mcp.pontifexxpaddock.com"
 FULL_URL = f"{BASE_URL}/mcp?api_key={SERPER_KEY}"
 
 async def debug_connection():
